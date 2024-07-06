@@ -2,6 +2,6 @@
 .idea
 
 **/token.json
-**/credentials.json
+credentials.json
 
 **/__pycache__
