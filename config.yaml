@@ -1,0 +1,10 @@
+courses_dir: "courses"
+
+# Google
+google:
+  credentials_file: "credentials.json"
+
+
+# Github
+github:
+  token: "YOUR_GITHUB_TOKEN"
