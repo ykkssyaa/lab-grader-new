@@ -107,13 +107,22 @@ def find_github_column(google_spreadsheet_id: str, group: str) -> str:
         return None
 
 
-def update_cell(google_spreadsheet_id: str, sheet: str, col: str, row: str, value: str):
+def update_cell(google_spreadsheet_id: str, sheet: str, col: str, row: str, value: str, check_null: bool = False):
     if creds is None:
         print("update_cell: Credentials not loaded.")
         return []
 
     service = build("sheets", "v4", credentials=creds)
     cell = f"{sheet}!{col}{row}"
+
+    if check_null:
+        existing_value = service.spreadsheets().values().get(
+            spreadsheetId=google_spreadsheet_id,
+            range=cell
+        ).execute().get("values", [[""]])[0][0]
+
+        if existing_value == value:
+            raise ValueError("Аккаунт GitHub уже был указан ранее. Для изменения аккаунта обратитесь к преподавателю")
 
     body = {
         "range": cell,

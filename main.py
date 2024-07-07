@@ -89,8 +89,8 @@ def get_course_groups(course_id: str = Path(..., description="Course ID")):
 
 @app.get('/courses/{course_id}/groups/{group_id}/labs', response_model=list)
 def get_course_group_labs(
-    course_id: str = Path(..., description="Course ID"),
-    group_id: str = Path(..., description="Group ID")
+        course_id: str = Path(..., description="Course ID"),
+        group_id: str = Path(..., description="Group ID")
 ):
     course_file = os.path.join(COURSES_DIR, f'{course_id}.yaml')
 
@@ -128,11 +128,10 @@ def get_course_group_labs(
 
 @app.post("/courses/{course_id}/groups/{group_id}/register")
 def register_student(
-    data=Body(),
-    course_id: str = Path(..., description="Course ID"),
-    group_id: str = Path(..., description="Group ID")
+        data=Body(),
+        course_id: str = Path(..., description="Course ID"),
+        group_id: str = Path(..., description="Group ID")
 ):
-
     # Проверка наличия и длины полей
     required_fields = ["name", "surname", "github"]
     for field in required_fields:
@@ -180,11 +179,17 @@ def register_student(
 
             student_index = students.index(full_name) + 3
 
-            google_docs.update_cell(google_spreadsheet, group_id,
-                                    github_column[:-1], str(student_index), data['github']
-                                    )
+            google_docs.update_cell(
+                google_spreadsheet,
+                group_id,
+                github_column[:-1], str(student_index),
+                data['github'],
+                check_null=True
+            )
 
-            return {"message": f"{full_name} найден"}
+            return {"message": "Аккаунт GitHub успешно задан"}
 
+        except ValueError as ve:
+            raise HTTPException(status_code=422, detail=str(ve))
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
