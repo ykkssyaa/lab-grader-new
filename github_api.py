@@ -9,8 +9,10 @@ def is_user_exist(username: str) -> bool:
     g = Github(auth=auth)
     try:
         user = g.get_user(username)
+        g.close()
         return user is not None
     except:
+        g.close()
         return False
 
 
