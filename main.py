@@ -2,6 +2,7 @@ import yaml
 from fastapi import FastAPI, Path, HTTPException
 import google_docs
 import github_api
+from config_loader import COURSES_DIR
 import os
 
 app = FastAPI()
@@ -9,14 +10,13 @@ app = FastAPI()
 
 @app.get('/courses/', response_model=list)
 def get_courses():
-    courses_dir = 'courses'
     courses_info = []
 
-    if not os.path.exists(courses_dir) or not os.path.isdir(courses_dir):
+    if not os.path.exists(COURSES_DIR) or not os.path.isdir(COURSES_DIR):
         return []
 
-    for filename in os.listdir(courses_dir):
-        file_path = os.path.join(courses_dir, filename)
+    for filename in os.listdir(COURSES_DIR):
+        file_path = os.path.join(COURSES_DIR, filename)
         if os.path.isfile(file_path) and filename.endswith('.yaml'):
             with open(file_path, 'r', encoding='utf-8') as file:
                 try:
@@ -35,8 +35,7 @@ def get_courses():
 
 @app.get('/courses/{course_id}/', response_model=dict)
 def get_course(course_id: str = Path(..., description="Course ID")):
-    courses_dir = 'courses'
-    course_file = os.path.join(courses_dir, f'{course_id}.yaml')
+    course_file = os.path.join(COURSES_DIR, f'{course_id}.yaml')
 
     if not os.path.exists(course_file) or not os.path.isfile(course_file):
         raise HTTPException(status_code=404, detail="Course not found")
@@ -60,8 +59,7 @@ def get_course(course_id: str = Path(..., description="Course ID")):
 
 @app.get('/courses/{course_id}/groups', response_model=list)
 def get_course_groups(course_id: str = Path(..., description="Course ID")):
-    courses_dir = 'courses'
-    course_file = os.path.join(courses_dir, f'{course_id}.yaml')
+    course_file = os.path.join(COURSES_DIR, f'{course_id}.yaml')
 
     if not os.path.exists(course_file) or not os.path.isfile(course_file):
         raise HTTPException(status_code=404, detail="Course not found")
@@ -93,8 +91,7 @@ def get_course_group_labs(
     course_id: str = Path(..., description="Course ID"),
     group_id: str = Path(..., description="Group ID")
 ):
-    courses_dir = 'courses'
-    course_file = os.path.join(courses_dir, f'{course_id}.yaml')
+    course_file = os.path.join(COURSES_DIR, f'{course_id}.yaml')
 
     if not os.path.exists(course_file) or not os.path.isfile(course_file):
         raise HTTPException(status_code=404, detail="Course not found")

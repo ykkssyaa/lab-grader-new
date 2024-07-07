@@ -1,12 +1,12 @@
 from github import Github
 from github import Auth
+from config_loader import GITHUB_TOKEN
 
-token = ""
-auth = Auth.Token(token)
+auth = Auth.Token(GITHUB_TOKEN)
 
 g = Github(auth=auth)
 
-org_name = 'TestYkks'
+org_name = 'suai-os-2024'
 organization = g.get_organization(org_name)
 
 print("Название организации:", organization.name)

@@ -3,6 +3,8 @@ courses_dir: "courses"
 # Google
 google:
   credentials_file: "credentials.json"
+  token_file: "token.json"
+  google_sheets_labs_range: "C2:AA2"
 
 
 # Github
