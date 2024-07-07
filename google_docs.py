@@ -60,35 +60,3 @@ def get_course_group_labs(google_spreadsheet_id: str, group: str) -> list[str]:
 
     return spreadsheet.get("values", [])[0]
 
-
-def main():
-
-    # The ID and range of a sample spreadsheet.
-    SAMPLE_SPREADSHEET_ID = "17DtoKaKdlBx26ADHYEUOW9LtTqu2gexUzj6xK6SGw4s"
-    SAMPLE_RANGE_NAME = "4136!B2:B27"
-
-    try:
-        service = build("sheets", "v4", credentials=creds)
-
-        # Call the Sheets API
-        sheet = service.spreadsheets()
-        result = (
-            sheet.values()
-            .get(spreadsheetId=SAMPLE_SPREADSHEET_ID, range=SAMPLE_RANGE_NAME)
-            .execute()
-        )
-        values = result.get("values", [])
-
-        if not values:
-            print("No data found.")
-            return
-
-        for row in values:
-            print(row)
-
-    except HttpError as err:
-        print(err)
-
-
-if __name__ == "__main__":
-    main()

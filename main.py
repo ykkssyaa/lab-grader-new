@@ -1,6 +1,7 @@
 import yaml
 from fastapi import FastAPI, Path, HTTPException
 import google_docs
+import github_api
 import os
 
 app = FastAPI()
@@ -85,6 +86,7 @@ def get_course_groups(course_id: str = Path(..., description="Course ID")):
 
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get('/courses/{course_id}/groups/{group_id}/labs', response_model=list)
 def get_course_group_labs(
