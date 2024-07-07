@@ -6,7 +6,8 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-from config_loader import GOOGLE_CREDENTIALS_FILE, GOOGLE_TOKEN_FILE, LABS_SHEETS_RANGE
+from config_loader import (GOOGLE_CREDENTIALS_FILE, GOOGLE_TOKEN_FILE, LABS_SHEETS_RANGE,
+                           STUDENTS_SHEETS_RANGE, HEADERS_SHEETS_RANGE, GITHUB_HEADER)
 
 creds = None
 
@@ -29,8 +30,16 @@ if not creds or not creds.valid:
         token.write(creds.to_json())
 
 
-def get_course_groups(google_spreadsheet_id: str) -> list[str]:
+def column_index_to_letter(index):
+    """Convert a column index (0-based) to a letter (A, B, C, ..., AA, AB, ...)"""
+    letters = ""
+    while index >= 0:
+        letters = chr(index % 26 + ord('A')) + letters
+        index = index // 26 - 1
+    return letters
 
+
+def get_course_groups(google_spreadsheet_id: str) -> list[str]:
     if creds is None:
         print("get_course_groups: Credentials not loaded.")
         return []
@@ -44,7 +53,6 @@ def get_course_groups(google_spreadsheet_id: str) -> list[str]:
 
 
 def get_course_group_labs(google_spreadsheet_id: str, group: str) -> list[str]:
-
     if creds is None:
         print("get_course_groups: Credentials not loaded.")
         return []
@@ -59,3 +67,66 @@ def get_course_group_labs(google_spreadsheet_id: str, group: str) -> list[str]:
 
     return spreadsheet.get("values", [])[0]
 
+
+def get_students_of_group(google_spreadsheet_id: str, group: str) -> list[str]:
+    if creds is None:
+        print("get_users_of_group: Credentials not loaded.")
+        return []
+
+    service = build("sheets", "v4", credentials=creds)
+    spreadsheet_range = f"{group}!{STUDENTS_SHEETS_RANGE}"
+
+    spreadsheet = service.spreadsheets().values().get(
+        spreadsheetId=google_spreadsheet_id,
+        range=spreadsheet_range
+    ).execute()
+
+    return [row[0] for row in spreadsheet.get("values", [])]
+
+
+def find_github_column(google_spreadsheet_id: str, group: str) -> str:
+    if creds is None:
+        print("find_github_column: Credentials not loaded.")
+        return []
+
+    service = build("sheets", "v4", credentials=creds)
+    spreadsheet_range = f"{group}!{HEADERS_SHEETS_RANGE}"
+
+    spreadsheet = service.spreadsheets().values().get(
+        spreadsheetId=google_spreadsheet_id,
+        range=spreadsheet_range
+    ).execute()
+
+    headers = spreadsheet.get("values", [])[0]
+
+    try:
+        index = headers.index(GITHUB_HEADER)
+        return f"{column_index_to_letter(index)}1"
+
+    except ValueError:
+        return None
+
+
+def update_cell(google_spreadsheet_id: str, sheet: str, col: str, row: str, value: str):
+    if creds is None:
+        print("update_cell: Credentials not loaded.")
+        return []
+
+    service = build("sheets", "v4", credentials=creds)
+    cell = f"{sheet}!{col}{row}"
+
+    body = {
+        "range": cell,
+        "values": [
+            [value]
+        ]
+    }
+
+    result = service.spreadsheets().values().update(
+        spreadsheetId=google_spreadsheet_id,
+        range=cell,
+        valueInputOption="RAW",
+        body=body
+    ).execute()
+
+    print(f"Updated cell {cell} with value '{value}'")
