@@ -4,7 +4,7 @@ courses_dir: "courses"
 google:
   credentials_file: "credentials.json"
   token_file: "token.json"
-  labs_range: "C2:AA2"
+  labs_range: "C1:AA2"
   students_range: "B3:B43"
   headers_range: "A1:BA1"
   github_header: "GitHub"

@@ -65,7 +65,7 @@ def get_course_group_labs(google_spreadsheet_id: str, group: str) -> list[str]:
         range=spreadsheet_range
     ).execute()
 
-    return spreadsheet.get("values", [])[0]
+    return spreadsheet.get("values", [])
 
 
 def get_students_of_group(google_spreadsheet_id: str, group: str) -> list[str]:
@@ -101,7 +101,7 @@ def find_github_column(google_spreadsheet_id: str, group: str) -> str:
 
     try:
         index = headers.index(GITHUB_HEADER)
-        return f"{column_index_to_letter(index)}1"
+        return f"{column_index_to_letter(index)}"
 
     except ValueError:
         return None
@@ -139,3 +139,19 @@ def update_cell(google_spreadsheet_id: str, sheet: str, col: str, row: str, valu
     ).execute()
 
     print(f"Updated cell {cell} with value '{value}'")
+
+
+def get_values_by_range(google_spreadsheet_id: str, spreadsheet_range: str):
+
+    if creds is None:
+        print("find_github_column: Credentials not loaded.")
+        return []
+
+    service = build("sheets", "v4", credentials=creds)
+
+    spreadsheet = service.spreadsheets().values().get(
+        spreadsheetId=google_spreadsheet_id,
+        range=spreadsheet_range
+    ).execute()
+
+    return spreadsheet.get("values", [])
