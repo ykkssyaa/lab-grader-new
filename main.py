@@ -3,8 +3,10 @@ from fastapi import FastAPI, Path, HTTPException, Request, Body
 from fastapi.responses import JSONResponse
 import google_docs
 import github_api
+import utils
 from config_loader import COURSES_DIR
 import os
+from utils import parseDateFromStr
 
 app = FastAPI()
 
@@ -179,6 +181,7 @@ def register_student(
 
             student_index = students.index(full_name) + 3
 
+            # TODO: отловить ошибку 202
             google_docs.update_cell(
                 google_spreadsheet,
                 group_id,
@@ -246,9 +249,14 @@ def get_grade(
 
         group_sheets_labs = google_docs.get_course_group_labs(google_spreadsheet, group_id)
         labs_ids = group_sheets_labs[1]
+        labs_dates = group_sheets_labs[0]
 
         # TODO: try except
         lab_index = labs_ids.index(lab_id)
+
+        # TODO: parse time
+        lab_deadline = parseDateFromStr(labs_dates[lab_index], course_config.get('course').get('timezone', 'UTC'))
+        print("lab_deadline", lab_deadline, type(lab_deadline))
 
         lab_column = google_docs.column_index_to_letter(lab_index + 2)
 
@@ -270,17 +278,82 @@ def get_grade(
         lab_prefix = lab_config.get('github-prefix', '')
         repo_name = f"{lab_prefix}-{data['github']}"
 
-        github_ogr = github_api.get_org_repo(organisation, repo_name)
+        github_ogr_repo = github_api.get_org_repo(organisation, repo_name)
 
-        if github_ogr is None:
+        if github_ogr_repo is None:
             raise HTTPException(status_code=404, detail="Репозиторий GitHub не найден")
 
         workflow_config_list = lab_config.get('course', {}).get('ci', {}).get("workflows", [])
 
         # TODO try except
-        result = github_api.check_workflows_runs(github_ogr, workflow_config_list)
+        result, logs = github_api.check_workflows_runs(github_ogr_repo, workflow_config_list)
 
         # TODO find max
         print("result", result)
+        print("logs", logs)
 
-        # TODO another things and updates
+        print(github_ogr_repo._requester.requestJsonAndCheck("GET", logs[0]))
+
+        latest_job_time = max(result)
+        print("lastest_job_time", latest_job_time, type(latest_job_time))
+
+        dates_diff = (latest_job_time - lab_deadline).days
+        print("dates_diff", dates_diff)
+
+        max_penalty = lab_config.get('penalty-max')
+        penalty = utils.calculatePenalty(dates_diff, max_penalty)
+        print("penalty", penalty)
+
+        # TODO: logs
+
+
+        task_id_column = course_config.get('course', {}).get('google', {}).get('task-id-column', 0)
+        print("task_id_column", task_id_column, type(task_id_column))
+
+        task_id_range = f"{group_id}!{google_docs.column_index_to_letter(task_id_column)}{student_row}"
+        print(task_id_range)
+
+        task_id_value = google_docs.get_values_by_range(google_spreadsheet, task_id_range)
+        print("task_id_value", task_id_value)
+
+        ign_t_id_key = 'ignore-task-id'
+        check_task = False
+
+        if ign_t_id_key in lab_config:  # ignore-task-id существует в конфиге
+            flag = lab_config.get(ign_t_id_key, True)  # Дефолтное значение - True, если значения нет
+            if flag:  # Если значения нет или оно True
+                check_task = True
+
+        if check_task:
+            print("Checking task id in logs")
+            # TODO check task
+            pass
+
+        # TODO Find Grading reduced in logs
+        grading_reduced_value = 0
+
+        reducing_coef = round(grading_reduced_value / 100, 2)
+        if reducing_coef > 0:
+            m_str = f"*{reducing_coef}"
+        else:
+            m_str = ""
+
+        ignore_date = lab_config.get('ignore-completion-date', False)
+
+        if not ignore_date and penalty > 0:
+            p_str = f"-{penalty}"
+        else:
+            p_str = ""
+
+        cell_grade_value = f"v{m_str}{p_str}"
+
+        google_docs.update_cell(
+            google_spreadsheet,
+            group_id,
+            lab_column,
+            str(student_row),
+            value=cell_grade_value,
+            check_null=False
+        )
+
+        return {"message": "Проверка пройдена успешно"}

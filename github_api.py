@@ -44,11 +44,14 @@ def check_workflows_runs(repository: Repository, workflows_list: list):
     workflow_runs = repository.get_workflow_runs(branch=default_branch)
 
     runs = []
+    logs = []
     for workflow_run in workflow_runs:
         if workflow_run.head_sha == latest_commit_sha:
             if workflow_run.status == "completed":
                 runs.append(workflow_run.updated_at)
+                logs.append(workflow_run.logs_url)
+
             else:
                 raise Exception("repository has unsuccessful jobs")
 
-    return runs
+    return runs, logs

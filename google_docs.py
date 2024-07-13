@@ -108,6 +108,7 @@ def find_github_column(google_spreadsheet_id: str, group: str) -> str:
 
 
 def update_cell(google_spreadsheet_id: str, sheet: str, col: str, row: str, value: str, check_null: bool = False):
+
     if creds is None:
         print("update_cell: Credentials not loaded.")
         return []
@@ -122,6 +123,9 @@ def update_cell(google_spreadsheet_id: str, sheet: str, col: str, row: str, valu
         ).execute().get("values", [[""]])[0][0]
 
         if existing_value == value:
+            raise ValueError("Этот аккаунт GitHub уже был указан ранее для этого же студента. "
+                             "Для изменения аккаунта обратитесь к преподавателю")
+        elif existing_value is not None and existing_value != '':
             raise ValueError("Аккаунт GitHub уже был указан ранее. Для изменения аккаунта обратитесь к преподавателю")
 
     body = {
