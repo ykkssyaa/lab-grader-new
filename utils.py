@@ -4,8 +4,20 @@ from dateutil.parser import parse
 
 
 def parseDateFromStr(date_str: str, timezone: str) -> datetime:
+    """
+        Парсит строку с датой и временем в объект datetime.
+
+        Args:
+            date_str (str): Строка с датой и временем.
+            timezone (str): Часовой пояс для преобразования.
+
+        Returns:
+            datetime: Объект datetime, представляющий дату и время.
+
+        Если строка пустая или не удалось распознать дату, возвращает None.
+        """
     if len(date_str) == 0:
-        return datetime(0, 0, 0)
+        return None
 
     if len(date_str.split('.')) == 2:
         date_str += f'{datetime.now().year}'
@@ -21,6 +33,19 @@ def parseDateFromStr(date_str: str, timezone: str) -> datetime:
 
 
 def calculatePenalty(dates_diff: int, penalty_max: int):
+    """
+        Вычисляет штрафные баллы на основе разницы в датах.
+
+        Args:
+            dates_diff (int): Разница в датах (в днях).
+            penalty_max (int): Максимальный штраф за работу.
+
+        Returns:
+            int: Вычисленные штрафные баллы.
+
+        Если разница в датах меньше 0, возвращает 0. Вычисляет количество недель
+        разницы и ограничивает его значением penalty_max.
+        """
     if dates_diff < 0:
         return 0
 
@@ -31,6 +56,17 @@ def calculatePenalty(dates_diff: int, penalty_max: int):
 
 
 def extract_taskid(logs):
+    """
+        Извлекает значения TASKID из строк логов.
+
+        Args:
+            logs (str): Строки логов, в которых ищутся значения TASKID.
+
+        Returns:
+            list: Список целочисленных значений TASKID.
+
+        Извлекает и возвращает все найденные значения TASKID из строк логов.
+        """
     taskid_pattern = r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d+Z) TASKID is (\d+)'
     task_ids = []
 
@@ -43,6 +79,17 @@ def extract_taskid(logs):
 
 
 def extract_grading_reduction(logs):
+    """
+        Извлекает значения уменьшения оценки из строк логов.
+
+        Args:
+            logs (str): Строки логов, в которых ищутся значения уменьшения оценки.
+
+        Returns:
+            list: Список целочисленных значений уменьшения оценки.
+
+        Извлекает и возвращает все найденные значения уменьшения оценки из строк логов.
+        """
     grading_pattern = r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d+Z) Grading reduced by (\d+)%'
     grading_reductions = []
 
@@ -55,6 +102,17 @@ def extract_grading_reduction(logs):
 
 
 def allValuesEqual(values: list) -> bool:
+    """
+        Проверяет, все ли значения в списке равны.
+
+        Args:
+            values (list): Список значений для проверки.
+
+        Returns:
+            bool: True, если все значения в списке равны, иначе False.
+
+        Проверяет все элементы списка на равенство друг другу.
+        """
     if len(values) < 2:
         return True
 

@@ -1,5 +1,5 @@
 import yaml
-from fastapi import FastAPI, Path, HTTPException, Request, Body
+from fastapi import FastAPI, Path, HTTPException, Body
 from fastapi.responses import JSONResponse
 import google_docs
 import github_api
