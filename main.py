@@ -6,7 +6,7 @@ import github_api
 import utils
 from config_loader import COURSES_DIR
 import os
-from utils import parseDateFromStr
+from utils import parseDateFromStr, extract_taskid, extract_grading_reduction, allValuesEqual
 
 app = FastAPI()
 
@@ -198,6 +198,17 @@ def register_student(
             raise HTTPException(status_code=500, detail=str(e))
 
 
+def save_logs_to_files(logs):
+    for index, log in enumerate(logs):
+        try:
+            file_name = f"log_{index + 1}.txt"  # Naming files based on index
+            with open(file_name, 'w', encoding='utf-8') as log_file:
+                log_file.write(log)
+            print(f"Logs saved to {file_name}")
+        except (ValueError, RuntimeError) as e:
+            print(f"Error processing {log}: {e}")
+
+
 @app.post("/courses/{course_id}/groups/{group_id}/labs/{lab_id}/grade")
 def get_grade(
         data=Body(),
@@ -205,7 +216,6 @@ def get_grade(
         group_id: str = Path(..., description="Group ID"),
         lab_id: str = Path(..., description="Lab ID"),
 ):
-
     required_fields = ["github"]
     for field in required_fields:
         if field not in data or not isinstance(data[field], str) or len(data[field]) == 0:
@@ -251,8 +261,13 @@ def get_grade(
         labs_ids = group_sheets_labs[1]
         labs_dates = group_sheets_labs[0]
 
-        # TODO: try except
-        lab_index = labs_ids.index(lab_id)
+        try:
+            lab_index = labs_ids.index(lab_id)
+        except ValueError:
+            return JSONResponse(status_code=403,
+                                content={
+                                    "message": "Для выбранной группы проверка данной лабораторной работы недоступна"
+                                })
 
         # TODO: parse time
         lab_deadline = parseDateFromStr(labs_dates[lab_index], course_config.get('course').get('timezone', 'UTC'))
@@ -262,9 +277,13 @@ def get_grade(
 
         grade_range = f"{group_id}!{lab_column}{student_row}"
         grade_value = google_docs.get_values_by_range(google_spreadsheet, grade_range)
-        if len(grade_value) != 0 and grade_value[0][0] != "?":
-            raise HTTPException(status_code=409, detail="Проверка лабораторной работы уже была пройдена ранее. "
-                                                        "Для повторной проверки обратитесь к преподавателю")
+        if len(grade_value) != 0 and grade_value[0][0][0] != "?":
+            return JSONResponse(
+                status_code=409,
+                content={"message": "Проверка лабораторной работы уже была пройдена ранее. "
+                                    "Для повторной проверки обратитесь к преподавателю"}
+            )
+
         lab_config = None
         labs = course_config.get('course', {}).get('labs', {})
         for lab_key in labs:
@@ -286,15 +305,12 @@ def get_grade(
         workflow_config_list = lab_config.get('course', {}).get('ci', {}).get("workflows", [])
 
         # TODO try except
-        result, logs = github_api.check_workflows_runs(github_ogr_repo, workflow_config_list)
+        workflows_times, logs_urls = github_api.check_workflows_runs(github_ogr_repo, workflow_config_list)
 
         # TODO find max
-        print("result", result)
-        print("logs", logs)
+        print("workflows_times", workflows_times)
 
-        print(github_ogr_repo._requester.requestJsonAndCheck("GET", logs[0]))
-
-        latest_job_time = max(result)
+        latest_job_time = max(workflows_times)
         print("lastest_job_time", latest_job_time, type(latest_job_time))
 
         dates_diff = (latest_job_time - lab_deadline).days
@@ -305,7 +321,30 @@ def get_grade(
         print("penalty", penalty)
 
         # TODO: logs
+        logs_details = []
+        for log_url in logs_urls:
+            print("getting logs", log_url)
+            logs_details.append(github_api.get_logs_from_url(log_url))
 
+        #save_logs_to_files(logs_details)
+
+        task_ids = []
+        for logs in logs_details:
+            task_id = extract_taskid(logs)
+            if task_id:
+                for task in task_id:
+                    task_ids.append(task_id)
+
+        print("task_ids", task_ids)
+        if not allValuesEqual(task_ids):
+            raise ("Подозрение на несанкционированное внесение изменений в тесты в связи с "
+                   "несоответствием варианта задания. "
+                   "Верните тесты в исходное состояние или обратитесь к преподавателю")
+
+        if len(task_ids) != 0:
+            task_id_from_logs = task_ids[0]
+        else:
+            raise "Ошибка с получением номера варианта задания"
 
         task_id_column = course_config.get('course', {}).get('google', {}).get('task-id-column', 0)
         print("task_id_column", task_id_column, type(task_id_column))
@@ -313,24 +352,58 @@ def get_grade(
         task_id_range = f"{group_id}!{google_docs.column_index_to_letter(task_id_column)}{student_row}"
         print(task_id_range)
 
-        task_id_value = google_docs.get_values_by_range(google_spreadsheet, task_id_range)
-        print("task_id_value", task_id_value)
+        task_id_value = int(google_docs.get_values_by_range(google_spreadsheet, task_id_range)[0][0])
+        task_id_shift = lab_config.get('taskid-shift', 0)
+        task_id_max = lab_config.get('taskid-max', -1)
+
+        if task_id_max == -1:
+            raise "Internal error"
+
+        task_id_value = (task_id_value + task_id_shift) % task_id_max
+
+        print("task_id_value", task_id_value, "task_id_shift", task_id_shift, "task_id_max", task_id_max)
 
         ign_t_id_key = 'ignore-task-id'
         check_task = False
 
         if ign_t_id_key in lab_config:  # ignore-task-id существует в конфиге
             flag = lab_config.get(ign_t_id_key, True)  # Дефолтное значение - True, если значения нет
-            if flag:  # Если значения нет или оно True
+            print("flag", flag)
+            if flag or flag is None:  # Если значения нет или оно True
                 check_task = True
 
         if check_task:
             print("Checking task id in logs")
-            # TODO check task
-            pass
+            if task_id_from_logs != task_id_value:
+                google_docs.update_cell(
+                    google_spreadsheet,
+                    group_id,
+                    lab_column,
+                    str(student_row),
+                    value="?! Wrong TASKID!",
+                    check_null=False
+                )
+
+                return JSONResponse(
+                    status_code=400,
+                    content={"message": "Выполнен чужой вариант задания, лабораторная работа не принята"}
+                )
 
         # TODO Find Grading reduced in logs
+
+        grading_reductions = []
+        for logs in logs_details:
+            reduction = extract_grading_reduction(logs)
+            if reduction:
+                grading_reductions.append(task_id)
+
+        print("grading_reductions", grading_reductions)
         grading_reduced_value = 0
+        if len(grading_reductions) > 0:
+            if allValuesEqual(grading_reductions):
+                grading_reduced_value = grading_reductions[0]
+            else:
+                raise "Internal error"
 
         reducing_coef = round(grading_reduced_value / 100, 2)
         if reducing_coef > 0:
