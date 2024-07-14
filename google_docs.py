@@ -31,7 +31,15 @@ if not creds or not creds.valid:
 
 
 def column_index_to_letter(index):
-    """Convert a column index (0-based) to a letter (A, B, C, ..., AA, AB, ...)"""
+    """
+    Конвертирует индекс столбца (начиная с 0) в буквенное обозначение (A, B, C, ..., AA, AB, ...).
+
+    Args:
+        index (int): Индекс столбца.
+
+    Returns:
+        str: Буквенное обозначение столбца.
+    """
     letters = ""
     while index >= 0:
         letters = chr(index % 26 + ord('A')) + letters
@@ -40,6 +48,15 @@ def column_index_to_letter(index):
 
 
 def get_course_groups(google_spreadsheet_id: str) -> list[str]:
+    """
+        Получает список групп курса из указанной Google таблицы.
+
+        Args:
+            google_spreadsheet_id (str): ID Google таблицы.
+
+        Returns:
+            list[str]: Список названий групп курса.
+    """
     if creds is None:
         print("get_course_groups: Credentials not loaded.")
         return []
@@ -53,6 +70,16 @@ def get_course_groups(google_spreadsheet_id: str) -> list[str]:
 
 
 def get_course_group_labs(google_spreadsheet_id: str, group: str) -> list[str]:
+    """
+        Получает список лабораторных работ для указанной группы из Google таблицы.
+
+        Args:
+            google_spreadsheet_id (str): ID Google таблицы.
+            group (str): Название группы.
+
+        Returns:
+            list[str]: Список лабораторных работ для указанной группы.
+    """
     if creds is None:
         print("get_course_groups: Credentials not loaded.")
         return []
@@ -69,6 +96,16 @@ def get_course_group_labs(google_spreadsheet_id: str, group: str) -> list[str]:
 
 
 def get_students_of_group(google_spreadsheet_id: str, group: str) -> list[str]:
+    """
+        Получает список студентов для указанной группы из Google таблицы.
+
+        Args:
+            google_spreadsheet_id (str): ID Google таблицы.
+            group (str): Название группы.
+
+        Returns:
+            list[str]: Список студентов для указанной группы.
+    """
     if creds is None:
         print("get_users_of_group: Credentials not loaded.")
         return []
@@ -85,6 +122,16 @@ def get_students_of_group(google_spreadsheet_id: str, group: str) -> list[str]:
 
 
 def find_github_column(google_spreadsheet_id: str, group: str) -> str:
+    """
+        Находит столбец, содержащий заголовок GitHub, для указанной группы из Google таблицы.
+
+        Args:
+            google_spreadsheet_id (str): ID Google таблицы.
+            group (str): Название группы.
+
+        Returns:
+            str: Буквенное обозначение столбца, содержащего заголовок GitHub, или None, если заголовок не найден.
+    """
     if creds is None:
         print("find_github_column: Credentials not loaded.")
         return []
@@ -108,7 +155,23 @@ def find_github_column(google_spreadsheet_id: str, group: str) -> str:
 
 
 def update_cell(google_spreadsheet_id: str, sheet: str, col: str, row: str, value: str, check_null: bool = False):
+    """
+        Обновляет содержимое указанной ячейки в Google таблице.
 
+        Args:
+            google_spreadsheet_id (str): ID Google таблицы.
+            sheet (str): Название листа в таблице.
+            col (str): Буквенное обозначение столбца (например, 'A', 'B', 'C', ...).
+            row (str): Номер строки (например, '1', '2', '3', ...).
+            value (str): Новое значение для ячейки.
+            check_null (bool, optional): Проверять наличие пустого значения в ячейке перед обновлением. По умолчанию False.
+
+        Raises:
+            ValueError: Если указанный аккаунт GitHub уже был указан ранее для этого же студента.
+
+        Returns:
+            None
+    """
     if creds is None:
         print("update_cell: Credentials not loaded.")
         return []
