@@ -9,11 +9,19 @@ from config_loader import GITHUB_TOKEN
 
 auth = Auth.Token(GITHUB_TOKEN)
 
-
 DEFAULT_JOBS = ["run-autograding-tests", "test", "build", "Autograding"]
 
 
 def is_user_exist(username: str) -> bool:
+    """
+        Проверяет существование пользователя GitHub по имени пользователя.
+
+        Args:
+            username (str): Имя пользователя GitHub.
+
+        Returns:
+            bool: True, если пользователь существует, иначе False.
+        """
     g = Github(auth=auth)
     try:
         user = g.get_user(username)
@@ -24,7 +32,17 @@ def is_user_exist(username: str) -> bool:
         return False
 
 
-def get_org_repo(org_name:str, repo_name:str) -> Repository:
+def get_org_repo(org_name: str, repo_name: str) -> Repository:
+    """
+        Возвращает объект репозитория GitHub для указанной организации и репозитория.
+
+        Args:
+            org_name (str): Название организации GitHub.
+            repo_name (str): Название репозитория GitHub.
+
+        Returns:
+            Repository: Объект репозитория GitHub, если найден, иначе None.
+        """
     g = Github(auth=auth)
     try:
         org = g.get_organization(org_name)
@@ -38,6 +56,19 @@ def get_org_repo(org_name:str, repo_name:str) -> Repository:
 
 
 def check_workflows_runs(repository: Repository, workflows_list: list):
+    """
+        Проверяет успешное выполнение последних workflow runs для указанного репозитория.
+
+        Args:
+            repository (Repository): Объект репозитория GitHub.
+            workflows_list (list): Список workflow jobs для проверки (по умолчанию DEFAULT_JOBS).
+
+        Raises:
+            Exception: Если хотя бы один из workflow runs завершился неудачно.
+
+        Returns:
+            tuple: Кортеж с временами выполнения успешных workflow runs и их URL логов.
+    """
     if len(workflows_list) == 0:
         workflows_list = DEFAULT_JOBS
 
@@ -63,6 +94,19 @@ def check_workflows_runs(repository: Repository, workflows_list: list):
 
 
 def get_logs_from_url(url):
+    """
+        Получает содержимое логов из указанного URL.
+
+        Args:
+            url (str): URL для получения логов.
+
+        Returns:
+            str: Содержимое логов в виде строки.
+
+        Raises:
+            ValueError: Если URL имеет неверный формат.
+            Exception: Если не удалось получить логи (например, неподдерживаемый тип контента или ошибка HTTP).
+    """
 
     pattern = r'^https://api\.github\.com/repos/[^/]+/[^/]+/actions/runs/\d+/logs$'
 
