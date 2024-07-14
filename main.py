@@ -1,12 +1,15 @@
 import yaml
-from fastapi import FastAPI, Path, HTTPException, Body
+from fastapi import FastAPI, Path, Body
 from fastapi.responses import JSONResponse
+from googleapiclient.errors import HttpError
+
 import google_docs
 import github_api
 import utils
 from config_loader import COURSES_DIR
 import os
 from utils import parseDateFromStr, extract_taskid, extract_grading_reduction, allValuesEqual
+from logger import Log
 
 app = FastAPI()
 
@@ -31,50 +34,63 @@ def get_courses():
                     }
                     courses_info.append(course_info)
                 except Exception as e:
-                    print(f"Error reading {filename}: {str(e)}")
+                    Log.debug('get_courses reading file exception', str(e))
+                    return JSONResponse(status_code=500, content={"message": "Internal Server Error"})
 
     return courses_info
 
 
 @app.get('/courses/{course_id}/', response_model=dict)
 def get_course(course_id: str = Path(..., description="Course ID")):
+    Log.debug(f"Endpoint /courses/{course_id}/ accessed")
+
     course_file = os.path.join(COURSES_DIR, f'{course_id}.yaml')
 
     if not os.path.exists(course_file) or not os.path.isfile(course_file):
-        raise HTTPException(status_code=404, detail="Course not found")
+        Log.warning(f"Course file {course_file} not found")
+        return JSONResponse(status_code=404, content={"message": "Курс не найден"})
 
-    with open(course_file, 'r', encoding='utf-8') as file:
-        try:
-            course_config = yaml.safe_load(file)
-            course_info = {
-                'id': course_id,
-                'config': f'{course_id}.yaml',
-                'name': course_config.get('course', {}).get('name', ''),
-                'semester': course_config.get('course', {}).get('semester', ''),
-                'email': course_config.get('course', {}).get('email', ''),
-                'github-organization': course_config.get('course', {}).get('github', {}).get('organization', ''),
-                'google-spreadsheet': course_config.get('course', {}).get('google', {}).get('spreadsheet', '')
-            }
-            return course_info
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+    try:
+        with open(course_file, 'r', encoding='utf-8') as file:
+            try:
+                course_config = yaml.safe_load(file)
+                course_info = {
+                    'id': course_id,
+                    'config': f'{course_id}.yaml',
+                    'name': course_config.get('course', {}).get('name', ''),
+                    'semester': course_config.get('course', {}).get('semester', ''),
+                    'email': course_config.get('course', {}).get('email', ''),
+                    'github-organization': course_config.get('course', {}).get('github', {}).get('organization', ''),
+                    'google-spreadsheet': course_config.get('course', {}).get('google', {}).get('spreadsheet', '')
+                }
+                return course_info
+            except Exception as e:
+                Log.error(f"Error reading YAML file {course_file}: {str(e)}")
+                return JSONResponse(status_code=500, content={"message": "Internal Server Error"})
+    except Exception as e:
+        Log.error(f"Error accessing file {course_file}: {str(e)}")
+        return JSONResponse(status_code=500, content={"message": "Internal Server Error"})
 
 
 @app.get('/courses/{course_id}/groups', response_model=list)
 def get_course_groups(course_id: str = Path(..., description="Course ID")):
+    Log.debug(f"Endpoint /courses/{course_id}/groups accessed")
+
     course_file = os.path.join(COURSES_DIR, f'{course_id}.yaml')
 
     if not os.path.exists(course_file) or not os.path.isfile(course_file):
-        raise HTTPException(status_code=404, detail="Course not found")
+        Log.warning(f"Course file {course_file} not found")
+        return JSONResponse(status_code=404, content={"message": "Курс не найден"})
 
-    with open(course_file, 'r', encoding='utf-8') as file:
-        try:
-
+    try:
+        with open(course_file, 'r', encoding='utf-8') as file:
             course_config = yaml.safe_load(file)
             google_spreadsheet_field = course_config.get('course', {}).get('google', {}).get('spreadsheet', '')
 
             if not google_spreadsheet_field:
-                return []
+                Log.warning(f"No Google spreadsheet configured for course {course_id}")
+                return JSONResponse(status_code=500,
+                                    content={"message": "Google spreadsheet not configured for course"})
 
             groups = google_docs.get_course_groups(google_spreadsheet_field)
 
@@ -85,8 +101,9 @@ def get_course_groups(course_id: str = Path(..., description="Course ID")):
 
             return groups
 
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        Log.error(f"Error processing course groups for {course_id}: {str(e)}")
+        return JSONResponse(status_code=500, content={"message": "Internal server error"})
 
 
 @app.get('/courses/{course_id}/groups/{group_id}/labs', response_model=list)
@@ -94,18 +111,23 @@ def get_course_group_labs(
         course_id: str = Path(..., description="Course ID"),
         group_id: str = Path(..., description="Group ID")
 ):
+    Log.debug(f"Endpoint /courses/{course_id}/groups/{group_id}/labs accessed")
+
     course_file = os.path.join(COURSES_DIR, f'{course_id}.yaml')
 
     if not os.path.exists(course_file) or not os.path.isfile(course_file):
-        raise HTTPException(status_code=404, detail="Course not found")
+        Log.warning(f"Course file {course_file} not found")
+        return JSONResponse(status_code=404, content={"message": "Course not found"})
 
-    with open(course_file, 'r', encoding='utf-8') as file:
-        try:
+    try:
+        with open(course_file, 'r', encoding='utf-8') as file:
             course_config = yaml.safe_load(file)
             google_spreadsheet = course_config.get('course', {}).get('google', {}).get('spreadsheet', '')
 
             if not google_spreadsheet:
-                return []
+                Log.warning(f"No Google spreadsheet configured for course {course_id}")
+                return JSONResponse(status_code=500,
+                                    content={"message": "Google spreadsheet not configured for course"})
 
             lab_short_names = []
 
@@ -124,89 +146,117 @@ def get_course_group_labs(
                     group_labs.append(group)
 
             return group_labs
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+    except HttpError as e:
+        Log.error(f"HttpError processing labs for course {course_id}, group {group_id}: {str(e)}")
+        if e.status_code == 400:
+            return JSONResponse(status_code=404, content={"message": "Группа не найдена"})
+
+        return JSONResponse(status_code=500, content={"message": "Internal server error"})
+
+    except Exception as e:
+        Log.error(f"Error processing labs for course {course_id}, group {group_id}: {str(e)}")
+        return JSONResponse(status_code=500, content={"message": "Internal server error"})
 
 
 @app.post("/courses/{course_id}/groups/{group_id}/register")
 def register_student(
-        data=Body(),
+        data=Body(...),
         course_id: str = Path(..., description="Course ID"),
         group_id: str = Path(..., description="Group ID")
 ):
+    Log.debug(f"Endpoint /courses/{course_id}/groups/{group_id}/register accessed")
+
     # Проверка наличия и длины полей
     required_fields = ["name", "surname", "github"]
     for field in required_fields:
         if field not in data or not isinstance(data[field], str) or len(data[field]) == 0:
-            raise HTTPException(status_code=422, detail="Validation error")
+            Log.warning(f"Validation error: Missing or invalid field '{field}' in request")
+            return JSONResponse(status_code=400,
+                                content={"message": f"Validation error: Missing or invalid field '{field}'"})
 
     # Проверка patronymic
     if "patronymic" in data and not isinstance(data["patronymic"], str):
-        raise HTTPException(status_code=422, detail="Validation error")
+        Log.warning("Validation error: 'patronymic' field must be a string")
+        return JSONResponse(status_code=422,
+                            content={"message": "Validation error: 'patronymic' field must be a string"})
 
     # Чтение конфига курса
     course_file = os.path.join(COURSES_DIR, f'{course_id}.yaml')
 
     if not os.path.exists(course_file) or not os.path.isfile(course_file):
-        raise HTTPException(status_code=404, detail="Course not found")
+        Log.warning(f"Course file {course_file} not found")
+        return JSONResponse(status_code=404, content={"message": "Курс не найден"})
 
-    with open(course_file, 'r', encoding='utf-8') as file:
-        try:
+    try:
+        with open(course_file, 'r', encoding='utf-8') as file:
             course_config = yaml.safe_load(file)
             google_spreadsheet = course_config.get('course', {}).get('google', {}).get('spreadsheet', '')
 
             if not google_spreadsheet:
-                raise HTTPException(status_code=500, detail="Error with reading google spreadsheet field")
+                Log.error("Google spreadsheet field not found in course configuration")
+                return JSONResponse(status_code=500, content={"message": "Internal Server Error"})
 
-            groups = google_docs.get_course_groups(google_spreadsheet)
-            if group_id not in groups:
-                raise HTTPException(status_code=404, detail="Group not found in course")
+    except Exception as e:
+        Log.error(f"Error reading course config file {course_file}: {str(e)}")
+        return JSONResponse(status_code=500, content={"message": "Internal Server Error"})
 
-            students = google_docs.get_students_of_group(google_spreadsheet, group_id)
+    try:
+        groups = google_docs.get_course_groups(google_spreadsheet)
+        if group_id not in groups:
+            Log.warning(f"Group {group_id} not found in course {course_id}")
+            return JSONResponse(status_code=404, content={"message": "Группа не найдена на курсе"})
 
-            full_name = f"{data['surname']} {data['name']}"
-            if data['patronymic']:
-                full_name += f" {data['patronymic']}"
+        students = google_docs.get_students_of_group(google_spreadsheet, group_id)
 
-            if full_name not in students:
-                raise HTTPException(status_code=404, detail="Студент не найден")
+    except Exception as e:
+        Log.error(f"Error getting course groups: {str(e)}")
+        return JSONResponse(status_code=500, content={"message": "Internal Server Error"})
 
-            if not github_api.is_user_exist(data['github']):
-                raise HTTPException(status_code=404, detail="Пользователь GitHub не найден")
+    full_name = f"{data['surname']} {data['name']}"
+    if data['patronymic']:
+        full_name += f" {data['patronymic']}"
 
-            github_column = google_docs.find_github_column(google_spreadsheet, group_id) + "1"
+    if full_name not in students:
+        Log.warning(f"Student {full_name} not found in group {group_id}")
+        return JSONResponse(status_code=404, content={"message": "Студент не найден"})
 
-            if github_column is None:
-                raise HTTPException(status_code=500, detail="Ошибка получения столбца GitHub")
+    if not github_api.is_user_exist(data['github']):
+        Log.warning(f"GitHub user {data['github']} not found")
+        return JSONResponse(status_code=404, content={"message": "Пользователь GitHub не найден"})
 
-            student_index = students.index(full_name) + 3
+    try:
+        github_column = google_docs.find_github_column(google_spreadsheet, group_id)
+        if github_column is None:
+            Log.error("Error finding GitHub column in Google spreadsheet")
+            return JSONResponse(status_code=500, content={"message": "Internal Server Error"})
 
-            # TODO: отловить ошибку 202
-            google_docs.update_cell(
-                google_spreadsheet,
-                group_id,
-                github_column[:-1], str(student_index),
-                data['github'],
-                check_null=True
-            )
+        student_index = students.index(full_name) + 3
 
-            return {"message": "Аккаунт GitHub успешно задан"}
+        result = google_docs.update_cell(
+            google_spreadsheet,
+            group_id,
+            github_column[:-1], str(student_index),
+            data['github'],
+            check_null=True
+        )
+        if result == 202:
+            return JSONResponse(status_code=202, content={
 
-        except ValueError as ve:
-            raise HTTPException(status_code=422, detail=str(ve))
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+                "message":
+                    "Этот аккаунт GitHub уже был указан ранее для этого же студента. "
+                    "Для изменения аккаунта обратитесь к преподавателю"
+            })
+        elif result == 422:
+            return JSONResponse(status_code=422, content={
+                "message": "Аккаунт GitHub уже был указан ранее. Для изменения аккаунта обратитесь к преподавателю"
+            })
 
+    except Exception as e:
+        Log.error(f"Error updating Google spreadsheet: {str(e)}")
+        return JSONResponse(status_code=500, content={"message": "Internal Server Error"})
 
-def save_logs_to_files(logs):
-    for index, log in enumerate(logs):
-        try:
-            file_name = f"log_{index + 1}.txt"  # Naming files based on index
-            with open(file_name, 'w', encoding='utf-8') as log_file:
-                log_file.write(log)
-            print(f"Logs saved to {file_name}")
-        except (ValueError, RuntimeError) as e:
-            print(f"Error processing {log}: {e}")
+    Log.info(f"GitHub account '{data['github']}' successfully assigned for {full_name}")
+    return JSONResponse(status_code=200, content={"message": "Аккаунт GitHub успешно задан"})
 
 
 @app.post("/courses/{course_id}/groups/{group_id}/labs/{lab_id}/grade")
@@ -216,16 +266,19 @@ def get_grade(
         group_id: str = Path(..., description="Group ID"),
         lab_id: str = Path(..., description="Lab ID"),
 ):
+    Log.debug(f"Starting get_grade function for course_id: {course_id}, group_id: {group_id}, lab_id: {lab_id}")
+
     required_fields = ["github"]
     for field in required_fields:
         if field not in data or not isinstance(data[field], str) or len(data[field]) == 0:
-            raise HTTPException(status_code=422, detail="Validation error")
+            return JSONResponse(status_code=422, content={"message": "Validation error"})
 
         # Чтение конфига курса
     course_file = os.path.join(COURSES_DIR, f'{course_id}.yaml')
 
     if not os.path.exists(course_file) or not os.path.isfile(course_file):
-        raise HTTPException(status_code=404, detail="Course not found")
+        Log.warning(f"Course file {course_file} not found")
+        return JSONResponse(status_code=404, content={"message": "Курс не найден"})
 
     with open(course_file, 'r', encoding='utf-8') as file:
         try:
@@ -233,19 +286,21 @@ def get_grade(
             google_spreadsheet = course_config.get('course', {}).get('google', {}).get('spreadsheet', '')
             organisation = course_config.get('course', {}).get('github', {}).get('organization', '')
 
+            if not google_spreadsheet:
+                return JSONResponse(status_code=500, content="")
+
         except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+            Log.error(e)
+            return JSONResponse(status_code=500, content="")
 
-        if not google_spreadsheet:
-            raise HTTPException(status_code=500, detail="Error with reading google spreadsheet field")
-
+    try:
         groups = google_docs.get_course_groups(google_spreadsheet)
         if group_id not in groups:
-            raise HTTPException(status_code=404, detail="Group not found in course")
+            return JSONResponse(status_code=404, content={"message": "Группа не найдена"})
 
         github_column = google_docs.find_github_column(google_spreadsheet, group_id)
         if github_column is None:
-            raise HTTPException(status_code=500, detail="Ошибка получения столбца GitHub")
+            return JSONResponse(status_code=500, content={"message": "Internal Server Error"})
 
         github_range = f"{group_id}!{github_column}1:{github_column}50"
 
@@ -261,120 +316,123 @@ def get_grade(
         labs_ids = group_sheets_labs[1]
         labs_dates = group_sheets_labs[0]
 
-        try:
-            lab_index = labs_ids.index(lab_id)
-        except ValueError:
-            return JSONResponse(status_code=403,
-                                content={
-                                    "message": "Для выбранной группы проверка данной лабораторной работы недоступна"
-                                })
+    except Exception as e:
+        Log.error(e)
+        return JSONResponse(status_code=500, content={"message": "Internal Server Error"})
 
-        # TODO: parse time
-        lab_deadline = parseDateFromStr(labs_dates[lab_index], course_config.get('course').get('timezone', 'UTC'))
-        print("lab_deadline", lab_deadline, type(lab_deadline))
+    try:
+        lab_index = labs_ids.index(lab_id)
+    except ValueError:
+        Log.error(f"Для выбранной группы {group_id} проверка лабораторной работы {lab_id} недоступна")
+        return JSONResponse(status_code=403,
+                            content={
+                                "message": "Для выбранной группы проверка данной лабораторной работы недоступна"
+                            })
 
+    lab_deadline = parseDateFromStr(labs_dates[lab_index], course_config.get('course').get('timezone', 'UTC'))
+    if lab_deadline in None:
+        Log.error(f"lab_deadline validation error. date: {labs_dates[lab_index]}")
+        return JSONResponse(status_code=500, content={"message": "Internal Server Error"})
+
+    try:
         lab_column = google_docs.column_index_to_letter(lab_index + 2)
 
         grade_range = f"{group_id}!{lab_column}{student_row}"
         grade_value = google_docs.get_values_by_range(google_spreadsheet, grade_range)
         if len(grade_value) != 0 and grade_value[0][0][0] != "?":
+            Log.error(f"Grade value {grade_value} for lab {lab_id} already exists ({data['github']})")
             return JSONResponse(
                 status_code=409,
                 content={"message": "Проверка лабораторной работы уже была пройдена ранее. "
                                     "Для повторной проверки обратитесь к преподавателю"}
             )
+    except Exception as e:
+        Log.error(e)
+        return JSONResponse(status_code=500, content={"message": "Internal Server Error"})
 
-        lab_config = None
-        labs = course_config.get('course', {}).get('labs', {})
-        for lab_key in labs:
-            short_name = labs[lab_key].get('short-name', '')
-            if short_name == lab_id:
-                lab_config = labs[lab_key]
-        if lab_config is None:
-            raise HTTPException(status_code=404, detail="Лабораторная не найдена в конфиге")
+    lab_config = None
+    labs = course_config.get('course', {}).get('labs', {})
+    for lab_key in labs:
+        short_name = labs[lab_key].get('short-name', '')
+        if short_name == lab_id:
+            lab_config = labs[lab_key]
 
-        print("lab_config", lab_config)
-        lab_prefix = lab_config.get('github-prefix', '')
-        repo_name = f"{lab_prefix}-{data['github']}"
+    if lab_config is None:
+        return JSONResponse(status_code=404, content={"message": "Лабораторная не найдена в конфиге"})
 
-        github_ogr_repo = github_api.get_org_repo(organisation, repo_name)
+    lab_prefix = lab_config.get('github-prefix', '')
+    repo_name = f"{lab_prefix}-{data['github']}"
 
-        if github_ogr_repo is None:
-            raise HTTPException(status_code=404, detail="Репозиторий GitHub не найден")
+    github_ogr_repo = github_api.get_org_repo(organisation, repo_name)
 
-        workflow_config_list = lab_config.get('course', {}).get('ci', {}).get("workflows", [])
+    if github_ogr_repo is None:
+        return JSONResponse(status_code=404, content={"message": "Репозиторий GitHub не найден"})
 
-        # TODO try except
+    workflow_config_list = lab_config.get('course', {}).get('ci', {}).get("workflows", [])
+
+    try:
         workflows_times, logs_urls = github_api.check_workflows_runs(github_ogr_repo, workflow_config_list)
+    except RuntimeError:
+        return JSONResponse(status_code=400, content={"message": "Пройдены не все обязательные тесты"})
+    except Exception as e:
+        Log.error(e)
+        return JSONResponse(status_code=500, content={"message": "Internal Server Error"})
 
-        # TODO find max
-        print("workflows_times", workflows_times)
+    latest_job_time = max(workflows_times)
 
-        latest_job_time = max(workflows_times)
-        print("lastest_job_time", latest_job_time, type(latest_job_time))
+    dates_diff = (latest_job_time - lab_deadline).days
+    max_penalty = lab_config.get('penalty-max')
+    penalty = utils.calculatePenalty(dates_diff, max_penalty)
 
-        dates_diff = (latest_job_time - lab_deadline).days
-        print("dates_diff", dates_diff)
+    logs_details = []
+    for log_url in logs_urls:
+        logs_details.append(github_api.get_logs_from_url(log_url))
 
-        max_penalty = lab_config.get('penalty-max')
-        penalty = utils.calculatePenalty(dates_diff, max_penalty)
-        print("penalty", penalty)
+    task_ids = []
+    for logs in logs_details:
+        task_id = extract_taskid(logs)
+        if task_id:
+            for task in task_id:
+                task_ids.append(task)
 
-        # TODO: logs
-        logs_details = []
-        for log_url in logs_urls:
-            print("getting logs", log_url)
-            logs_details.append(github_api.get_logs_from_url(log_url))
+    if not allValuesEqual(task_ids):
+        Log.error(f"Несоответствие номеров вариантов заданий в логах. task_ids: {task_ids} ({data['github']})")
+        return JSONResponse(status_code=400, content={
+            "message": "Подозрение на несанкционированное внесение изменений в тесты в связи с несоответствием "
+                       "варианта задания. Верните тесты в исходное состояние или обратитесь к преподавателю"
+        })
 
-        #save_logs_to_files(logs_details)
-
-        task_ids = []
-        for logs in logs_details:
-            task_id = extract_taskid(logs)
-            if task_id:
-                for task in task_id:
-                    task_ids.append(task_id)
-
-        print("task_ids", task_ids)
-        if not allValuesEqual(task_ids):
-            raise ("Подозрение на несанкционированное внесение изменений в тесты в связи с "
-                   "несоответствием варианта задания. "
-                   "Верните тесты в исходное состояние или обратитесь к преподавателю")
-
+    try:
         if len(task_ids) != 0:
             task_id_from_logs = task_ids[0]
         else:
-            raise "Ошибка с получением номера варианта задания"
+            raise Exception("Ошибка с получением номера варианта задания")
 
         task_id_column = course_config.get('course', {}).get('google', {}).get('task-id-column', 0)
-        print("task_id_column", task_id_column, type(task_id_column))
 
         task_id_range = f"{group_id}!{google_docs.column_index_to_letter(task_id_column)}{student_row}"
-        print(task_id_range)
 
         task_id_value = int(google_docs.get_values_by_range(google_spreadsheet, task_id_range)[0][0])
+
         task_id_shift = lab_config.get('taskid-shift', 0)
         task_id_max = lab_config.get('taskid-max', -1)
 
         if task_id_max == -1:
-            raise "Internal error"
+            raise Exception(f"Ошибка получения task_id_max для {lab_id}")
 
         task_id_value = (task_id_value + task_id_shift) % task_id_max
-
-        print("task_id_value", task_id_value, "task_id_shift", task_id_shift, "task_id_max", task_id_max)
 
         ign_t_id_key = 'ignore-task-id'
         check_task = False
 
         if ign_t_id_key in lab_config:  # ignore-task-id существует в конфиге
             flag = lab_config.get(ign_t_id_key, True)  # Дефолтное значение - True, если значения нет
-            print("flag", flag)
             if flag or flag is None:  # Если значения нет или оно True
                 check_task = True
 
         if check_task:
-            print("Checking task id in logs")
             if task_id_from_logs != task_id_value:
+                Log.info(f"Wrong task id for {lab_id} of {data['github']}")
                 google_docs.update_cell(
                     google_spreadsheet,
                     group_id,
@@ -389,21 +447,17 @@ def get_grade(
                     content={"message": "Выполнен чужой вариант задания, лабораторная работа не принята"}
                 )
 
-        # TODO Find Grading reduced in logs
-
         grading_reductions = []
         for logs in logs_details:
-            reduction = extract_grading_reduction(logs)
-            if reduction:
-                grading_reductions.append(task_id)
+            for red in extract_grading_reduction(logs):
+                grading_reductions.append(red)
 
-        print("grading_reductions", grading_reductions)
         grading_reduced_value = 0
         if len(grading_reductions) > 0:
             if allValuesEqual(grading_reductions):
                 grading_reduced_value = grading_reductions[0]
             else:
-                raise "Internal error"
+                raise Exception("Не все значения Grading reduced равны")
 
         reducing_coef = round(grading_reduced_value / 100, 2)
         if reducing_coef > 0:
@@ -429,4 +483,8 @@ def get_grade(
             check_null=False
         )
 
-        return {"message": "Проверка пройдена успешно"}
+    except Exception as e:
+        Log.error(e)
+        return JSONResponse(status_code=500, content={"message": "Internal Server Error"})
+
+    return {"message": "Проверка пройдена успешно"}

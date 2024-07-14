@@ -121,3 +121,15 @@ def allValuesEqual(values: list) -> bool:
             return False
 
     return True
+
+
+def save_logs_to_files(logs):
+    for index, log in enumerate(logs):
+        try:
+            file_name = f"log_{index + 1}.txt"
+            with open(file_name, 'w', encoding='utf-8') as log_file:
+                log_file.write(log)
+            print(f"Logs saved to {file_name}")
+        except (ValueError, RuntimeError) as e:
+            print(f"Error processing {log}: {e}")
+

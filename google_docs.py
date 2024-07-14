@@ -4,7 +4,6 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
 
 from config_loader import (GOOGLE_CREDENTIALS_FILE, GOOGLE_TOKEN_FILE, LABS_SHEETS_RANGE,
                            STUDENTS_SHEETS_RANGE, HEADERS_SHEETS_RANGE, GITHUB_HEADER)
@@ -25,7 +24,7 @@ if not creds or not creds.valid:
             GOOGLE_CREDENTIALS_FILE, SCOPES
         )
         creds = flow.run_local_server(port=0)
-    # Save the credentials for the next run
+
     with open(GOOGLE_TOKEN_FILE, "w") as token:
         token.write(creds.to_json())
 
@@ -58,8 +57,7 @@ def get_course_groups(google_spreadsheet_id: str) -> list[str]:
             list[str]: Список названий групп курса.
     """
     if creds is None:
-        print("get_course_groups: Credentials not loaded.")
-        return []
+        raise Exception('credentials is None')
 
     service = build("sheets", "v4", credentials=creds)
     spreadsheet = service.spreadsheets().get(spreadsheetId=google_spreadsheet_id).execute()
@@ -145,8 +143,7 @@ def update_cell(google_spreadsheet_id: str, sheet: str, col: str, row: str, valu
             None
     """
     if creds is None:
-        print("update_cell: Credentials not loaded.")
-        return []
+        raise Exception('credentials is None')
 
     service = build("sheets", "v4", credentials=creds)
     cell = f"{sheet}!{col}{row}"
@@ -158,10 +155,10 @@ def update_cell(google_spreadsheet_id: str, sheet: str, col: str, row: str, valu
         ).execute().get("values", [[""]])[0][0]
 
         if existing_value == value:
-            raise ValueError("Этот аккаунт GitHub уже был указан ранее для этого же студента. "
-                             "Для изменения аккаунта обратитесь к преподавателю")
+            return 202
+
         elif existing_value is not None and existing_value != '':
-            raise ValueError("Аккаунт GitHub уже был указан ранее. Для изменения аккаунта обратитесь к преподавателю")
+            return 422
 
     body = {
         "range": cell,
@@ -177,6 +174,8 @@ def update_cell(google_spreadsheet_id: str, sheet: str, col: str, row: str, valu
         body=body
     ).execute()
 
+    return 200
+
 
 def get_values_by_range(google_spreadsheet_id: str, spreadsheet_range: str):
     """
@@ -190,8 +189,7 @@ def get_values_by_range(google_spreadsheet_id: str, spreadsheet_range: str):
             list[list]: Список списков значений из указанного диапазона.
     """
     if creds is None:
-        print("find_github_column: Credentials not loaded.")
-        return []
+        raise Exception('credentials is None')
 
     service = build("sheets", "v4", credentials=creds)
 

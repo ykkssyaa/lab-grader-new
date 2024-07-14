@@ -88,7 +88,7 @@ def check_workflows_runs(repository: Repository, workflows_list: list):
                 logs.append(workflow_run.logs_url)
 
             else:
-                raise Exception("repository has unsuccessful jobs")
+                raise RuntimeError("repository has unsuccessful jobs")
 
     return runs, logs
 
