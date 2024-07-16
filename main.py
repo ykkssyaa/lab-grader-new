@@ -371,8 +371,11 @@ def get_grade(
     if github_ogr_repo is None:
         return JSONResponse(status_code=404, content={"message": "Репозиторий GitHub не найден"})
 
-    workflow_config_list = lab_config.get('ci', {}).get("workflows", [])
-
+    ci = lab_config.get('ci', {})
+    if not isinstance(ci, list):
+        workflow_config_list = ci.get("workflows", [])
+    else:
+        workflow_config_list = []
 
     try:
         workflows_times, logs_urls = github_api.check_workflows_runs(github_ogr_repo, workflow_config_list)
