@@ -220,9 +220,13 @@ def register_student(
         Log.warning(f"Student {full_name} not found in group {group_id}")
         return JSONResponse(status_code=404, content={"message": "Студент не найден"})
 
-    if not github_api.is_user_exist(data['github']):
-        Log.warning(f"GitHub user {data['github']} not found")
-        return JSONResponse(status_code=404, content={"message": "Пользователь GitHub не найден"})
+    try:
+        if not github_api.is_user_exist(data['github']):
+            Log.warning(f"GitHub user {data['github']} not found")
+            return JSONResponse(status_code=404, content={"message": "Пользователь GitHub не найден"})
+    except Exception as e:
+        Log.error(f"Error checking GitHub user {data['github']}: {str(e)}")
+        return JSONResponse(status_code=500, content={"message": "Internal Server Error"})
 
     try:
         github_column = google_docs.find_github_column(google_spreadsheet, group_id)
@@ -235,13 +239,12 @@ def register_student(
         result = google_docs.update_cell(
             google_spreadsheet,
             group_id,
-            github_column[:-1], str(student_index),
+            github_column, str(student_index),
             data['github'],
             check_null=True
         )
         if result == 202:
             return JSONResponse(status_code=202, content={
-
                 "message":
                     "Этот аккаунт GitHub уже был указан ранее для этого же студента. "
                     "Для изменения аккаунта обратитесь к преподавателю"
@@ -330,7 +333,7 @@ def get_grade(
                             })
 
     lab_deadline = parseDateFromStr(labs_dates[lab_index], course_config.get('course').get('timezone', 'UTC'))
-    if lab_deadline in None:
+    if lab_deadline is None:
         Log.error(f"lab_deadline validation error. date: {labs_dates[lab_index]}")
         return JSONResponse(status_code=500, content={"message": "Internal Server Error"})
 
@@ -358,7 +361,7 @@ def get_grade(
             lab_config = labs[lab_key]
 
     if lab_config is None:
-        return JSONResponse(status_code=404, content={"message": "Лабораторная не найдена в конфиге"})
+        return JSONResponse(status_code=404, content={"message": "Лабораторная не найдена"})
 
     lab_prefix = lab_config.get('github-prefix', '')
     repo_name = f"{lab_prefix}-{data['github']}"
@@ -368,7 +371,8 @@ def get_grade(
     if github_ogr_repo is None:
         return JSONResponse(status_code=404, content={"message": "Репозиторий GitHub не найден"})
 
-    workflow_config_list = lab_config.get('course', {}).get('ci', {}).get("workflows", [])
+    workflow_config_list = lab_config.get('ci', {}).get("workflows", [])
+
 
     try:
         workflows_times, logs_urls = github_api.check_workflows_runs(github_ogr_repo, workflow_config_list)
@@ -388,49 +392,49 @@ def get_grade(
     for log_url in logs_urls:
         logs_details.append(github_api.get_logs_from_url(log_url))
 
-    task_ids = []
-    for logs in logs_details:
-        task_id = extract_taskid(logs)
-        if task_id:
-            for task in task_id:
-                task_ids.append(task)
-
-    if not allValuesEqual(task_ids):
-        Log.error(f"Несоответствие номеров вариантов заданий в логах. task_ids: {task_ids} ({data['github']})")
-        return JSONResponse(status_code=400, content={
-            "message": "Подозрение на несанкционированное внесение изменений в тесты в связи с несоответствием "
-                       "варианта задания. Верните тесты в исходное состояние или обратитесь к преподавателю"
-        })
-
     try:
-        if len(task_ids) != 0:
-            task_id_from_logs = task_ids[0]
-        else:
-            raise Exception("Ошибка с получением номера варианта задания")
-
-        task_id_column = course_config.get('course', {}).get('google', {}).get('task-id-column', 0)
-
-        task_id_range = f"{group_id}!{google_docs.column_index_to_letter(task_id_column)}{student_row}"
-
-        task_id_value = int(google_docs.get_values_by_range(google_spreadsheet, task_id_range)[0][0])
-
-        task_id_shift = lab_config.get('taskid-shift', 0)
-        task_id_max = lab_config.get('taskid-max', -1)
-
-        if task_id_max == -1:
-            raise Exception(f"Ошибка получения task_id_max для {lab_id}")
-
-        task_id_value = (task_id_value + task_id_shift) % task_id_max
-
         ign_t_id_key = 'ignore-task-id'
-        check_task = False
+        check_task = True
 
         if ign_t_id_key in lab_config:  # ignore-task-id существует в конфиге
             flag = lab_config.get(ign_t_id_key, True)  # Дефолтное значение - True, если значения нет
             if flag or flag is None:  # Если значения нет или оно True
-                check_task = True
+                check_task = False
 
         if check_task:
+            task_ids = []
+            for logs in logs_details:
+                task_id = extract_taskid(logs)
+                if task_id:
+                    for task in task_id:
+                        task_ids.append(task)
+
+            if not allValuesEqual(task_ids):
+                Log.error(f"Несоответствие номеров вариантов заданий в логах. task_ids: {task_ids} ({data['github']})")
+                return JSONResponse(status_code=400, content={
+                    "message": "Подозрение на несанкционированное внесение изменений в тесты в связи с несоответствием "
+                               "варианта задания. Верните тесты в исходное состояние или обратитесь к преподавателю"
+                })
+
+            if len(task_ids) != 0:
+                task_id_from_logs = task_ids[0]
+            else:
+                raise Exception("Ошибка с получением номера варианта задания")
+
+            task_id_column = course_config.get('course', {}).get('google', {}).get('task-id-column', 0)
+
+            task_id_range = f"{group_id}!{google_docs.column_index_to_letter(task_id_column)}{student_row}"
+
+            task_id_value = int(google_docs.get_values_by_range(google_spreadsheet, task_id_range)[0][0])
+
+            task_id_shift = lab_config.get('taskid-shift', 0)
+            task_id_max = lab_config.get('taskid-max', -1)
+
+            if task_id_max == -1:
+                raise Exception(f"Ошибка получения task_id_max для {lab_id} ({data['github']})")
+
+            task_id_value = (task_id_value + task_id_shift) % task_id_max
+
             if task_id_from_logs != task_id_value:
                 Log.info(f"Wrong task id for {lab_id} of {data['github']}")
                 google_docs.update_cell(

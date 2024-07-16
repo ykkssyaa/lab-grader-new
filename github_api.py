@@ -6,6 +6,7 @@ import requests
 from github import Github
 from github import Auth, Repository
 from config_loader import GITHUB_TOKEN
+from logger import Log
 
 auth = Auth.Token(GITHUB_TOKEN)
 
@@ -27,9 +28,9 @@ def is_user_exist(username: str) -> bool:
         user = g.get_user(username)
         g.close()
         return user is not None
-    except:
+    except Exception as e:
         g.close()
-        return False
+        raise e
 
 
 def get_org_repo(org_name: str, repo_name: str) -> Repository:
@@ -50,7 +51,8 @@ def get_org_repo(org_name: str, repo_name: str) -> Repository:
 
         g.close()
         return repo
-    except:
+    except Exception as e:
+        Log.error(e)
         g.close()
         return None
 
@@ -69,8 +71,11 @@ def check_workflows_runs(repository: Repository, workflows_list: list):
         Returns:
             tuple: Кортеж с временами выполнения успешных workflow runs и их URL логов.
     """
+    check_list = False
     if len(workflows_list) == 0:
         workflows_list = DEFAULT_JOBS
+    else:
+        check_list = True
 
     default_branch = repository.default_branch
 
@@ -83,12 +88,16 @@ def check_workflows_runs(repository: Repository, workflows_list: list):
     logs = []
     for workflow_run in workflow_runs:
         if workflow_run.head_sha == latest_commit_sha:
-            if workflow_run.status == "completed":
+            if workflow_run.status == "completed" and workflow_run.conclusion == "success":
                 runs.append(workflow_run.updated_at)
                 logs.append(workflow_run.logs_url)
-
+                if check_list and workflow_run.name in workflows_list:
+                    workflows_list.remove(workflow_run.name)
             else:
                 raise RuntimeError("repository has unsuccessful jobs")
+
+    if check_list and len(workflows_list) != 0:
+        raise RuntimeError(f"Обязательные workflow jobs не были выполнены: {', '.join(workflows_list)}")
 
     return runs, logs
 
